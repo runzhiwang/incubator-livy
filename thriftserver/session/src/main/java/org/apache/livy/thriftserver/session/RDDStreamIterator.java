@@ -21,46 +21,95 @@ import java.io.Serializable;
 import java.util.*;
 
 import scala.collection.JavaConversions;
-import scala.runtime.AbstractFunction1;
+import scala.runtime.AbstractFunction2;
 
 import org.apache.spark.api.java.JavaRDD;
 
-class PartitionSampleFunction<T> extends AbstractFunction1<scala.collection.Iterator<T>, List<T>>
+class PartitionSampleFunction<T>
+        extends AbstractFunction2<
+          org.apache.spark.TaskContext,
+          scala.collection.Iterator<T>,
+          List<T>>
         implements Serializable {
-    private int startIndex;
-    private int endIndex;
+    private Map<Integer, SamplePartition> samplePartitionMap;
 
-    PartitionSampleFunction(int startIndex, int endIndex) {
-        this.startIndex = startIndex;
-        this.endIndex = endIndex;
+    PartitionSampleFunction(Map<Integer, SamplePartition> samplePartitionMap) {
+        this.samplePartitionMap = samplePartitionMap;
     }
 
     @Override
-    public List<T> apply(scala.collection.Iterator<T> iterator) {
+    public List<T> apply(org.apache.spark.TaskContext tc, scala.collection.Iterator<T> iterator) {
         List<T> list = new ArrayList<>();
         int index = 0;
         T element = null;
-        while (iterator.hasNext()) {
+        SamplePartition sp = samplePartitionMap.get(tc.partitionId());
+        while (iterator.hasNext() && index < sp.getEnd()) {
             element = iterator.next();
-            if (index >= startIndex && index < endIndex) {
+            if (index >= sp.getStart() && index < sp.getEnd()) {
                 list.add(element);
             }
             index++;
-            if (index > endIndex) {
-                break;
-            }
         }
 
         return list;
     }
 }
 
+/**
+ *  Record the next position in partition waiting to fetched by runJob.
+ *  For example, if PartitionCursor is (1, 2),
+ *  it means runJob should get elements from the third element of the second partition
+ */
+class PartitionCursor {
+    private Integer partitionIndex;
+    private Integer nextIndexInPartition;
+
+    public PartitionCursor(Integer partitionIndex, Integer nextIndexInPartition) {
+        this.partitionIndex = partitionIndex;
+        this.nextIndexInPartition = nextIndexInPartition;
+    }
+
+    public Integer getPartitionIndex() {
+        return partitionIndex;
+    }
+
+    public Integer getNextIndexInPartition() {
+        return nextIndexInPartition;
+    }
+}
+
+/**
+ *  Get elements in [start, end) of Partition: partitionId
+ */
+class SamplePartition implements Serializable {
+    private Integer partitionId;
+    private Integer start;
+    private Integer end;
+
+    public SamplePartition(Integer partitionId, Integer startIndex, Integer endIndex) {
+        this.partitionId = partitionId;
+        this.start = startIndex;
+        this.end = endIndex;
+    }
+
+    public Integer getPartitionId() {
+        return partitionId;
+    }
+
+    public Integer getStart() {
+        return start;
+    }
+
+    public Integer getEnd() {
+        return end;
+    }
+}
+
 public class RDDStreamIterator<T> implements Iterator<T> {
     private JavaRDD<T> rdd;
     private Integer batchSize;
-    private Integer curPartitionIndex;
-    // the index of elements waiting to be fetched in current partition
-    private Integer waitingFetchedItemIndexInPartition;
+
+    private PartitionCursor partitionCursor;
     private List<Integer> partitionSizeList;
     private Iterator<T> iter;
     // the num of elements in rdd
@@ -71,8 +120,7 @@ public class RDDStreamIterator<T> implements Iterator<T> {
     public RDDStreamIterator(JavaRDD<T> rdd, Integer batchSize) {
         this.rdd = rdd;
         this.batchSize = batchSize;
-        this.curPartitionIndex = 0;
-        this.waitingFetchedItemIndexInPartition = 0;
+        partitionCursor = new PartitionCursor(0, 0);
         this.partitionSizeList = null;
         iter = (new ArrayList<T>()).iterator();
         this.totalItemNum = 0L;
@@ -90,23 +138,27 @@ public class RDDStreamIterator<T> implements Iterator<T> {
                 }
                 return Collections.singleton(count).iterator();
             }).collect();
+
             for (int i = 0; i < this.partitionSizeList.size(); i ++) {
                 this.totalItemNum = this.totalItemNum + this.partitionSizeList.get(i);
             }
         }
     }
 
-    private Iterator<T> collectPartitionByBatch() {
-        List<Integer> partitions = Arrays.asList(curPartitionIndex);
+    private Iterator<T> collectPartitionByBatch(Map<Integer, SamplePartition> samplePartitionMap) {
+        List<Integer> partitions = new ArrayList<Integer>(samplePartitionMap.keySet());
+
         List<T>[] batches = (List<T>[])rdd.context().runJob(rdd.rdd(),
-                new PartitionSampleFunction<T>(waitingFetchedItemIndexInPartition,
-                        waitingFetchedItemIndexInPartition + batchSize),
+                new PartitionSampleFunction<T>(samplePartitionMap),
                 (scala.collection.Seq) JavaConversions.asScalaBuffer(partitions),
                 scala.reflect.ClassTag$.MODULE$.apply(List.class));
-        if (batches.length == 0) {
-            return (new ArrayList<T>()).iterator();
+
+        List<T> result = new ArrayList<T>();
+        for (int i = 0; i < batches.length; i ++) {
+            result.addAll(batches[i]);
         }
-        return batches[0].iterator();
+
+        return result.iterator();
     }
 
     private boolean isIndexOutOfBound() {
@@ -128,6 +180,56 @@ public class RDDStreamIterator<T> implements Iterator<T> {
         return false;
     }
 
+    /**
+     * For example:
+     *   There are 3 partitions with size: 3, 2, 5, and the partitionCursor is (1, 1),
+     *   and batchSize is 4. So get the last element from the second partition
+     *   and get the 3 elements from the third partition.
+     *   So the return map is {1: SamplePartition{1, 1, 2}, 2: SamplePartition{2, 0, 3}}.
+     *   And partitionCursor move to (2, 3)
+     */
+    private Map<Integer, SamplePartition> getSamplePartitions() {
+        Map<Integer, SamplePartition> samplePartitionMap = new TreeMap<>();
+        int leftBatchSize = batchSize;
+        int startIndex = partitionCursor.getNextIndexInPartition();
+
+        for (int i = partitionCursor.getPartitionIndex(); i < partitionSizeList.size(); i ++) {
+            int partitionSize = partitionSizeList.get(i);
+
+            int sizeInCurPartition = partitionSize;
+            if (i == partitionCursor.getPartitionIndex()) {
+                // [0, startIndex) of partition i has been fetched by previous runJob
+                sizeInCurPartition -= startIndex;
+            }
+
+            if (leftBatchSize > sizeInCurPartition) {
+                leftBatchSize = leftBatchSize - sizeInCurPartition;
+                SamplePartition sp = new SamplePartition(i, startIndex, partitionSize);
+
+                samplePartitionMap.put(sp.getPartitionId(), sp);
+
+                // sample the next partition
+                startIndex = 0;
+                continue;
+            } else {
+                SamplePartition sp = new SamplePartition(i, startIndex, startIndex + leftBatchSize);
+                samplePartitionMap.put(sp.getPartitionId(), sp);
+
+                if (leftBatchSize == sizeInCurPartition) {
+                    partitionCursor = new PartitionCursor(i + 1, 0);
+                } else if (leftBatchSize < sizeInCurPartition) {
+                    partitionCursor = new PartitionCursor(i, startIndex + leftBatchSize);
+                }
+
+                // has sample batchSize elements
+                return samplePartitionMap;
+            }
+        }
+
+        partitionCursor = new PartitionCursor(partitionSizeList.size(), 0);
+        return samplePartitionMap;
+    }
+
     public T next() {
         if (iter.hasNext()) {
             currItemNum ++;
@@ -138,20 +240,8 @@ public class RDDStreamIterator<T> implements Iterator<T> {
             throw new NoSuchElementException();
         }
 
-        // use while to avoid some paritition is empty and collectPartitionByBatch return empty iter
-        while (!iter.hasNext()) {
-            iter = collectPartitionByBatch();
-            if (batchSize >=
-                    partitionSizeList.get(curPartitionIndex) - waitingFetchedItemIndexInPartition) {
-                // batchSize exceeds the the num of left elements of current partition,
-                // so move to next partition and reset waitingFetchedItemIndexInPartition
-                curPartitionIndex = curPartitionIndex + 1;
-                waitingFetchedItemIndexInPartition = 0;
-            } else {
-                // continue to get elements from current partition
-                waitingFetchedItemIndexInPartition = waitingFetchedItemIndexInPartition + batchSize;
-            }
-        }
+        Map<Integer, SamplePartition> partitionsMap = getSamplePartitions();
+        iter = collectPartitionByBatch(partitionsMap);
 
         currItemNum ++;
         return iter.next();
