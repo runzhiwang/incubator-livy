@@ -126,6 +126,7 @@ public class ThriftSessionTest {
     assertTrue(cols[0].getNulls().get(0));
 
     assertTrue(waitFor(new CleanupStatementJob(s1, st4)));
+
     // Tear down the session.
     waitFor(new UnregisterSessionJob(s1));
 
@@ -201,7 +202,7 @@ public class ThriftSessionTest {
   }
 
   private SqlJob newSqlJob(String session, String stId, String statement) {
-    return new SqlJob(session, stId, statement, "true", "incrementalPropName");
+    return new SqlJob(session, stId, statement, "true", "incrementalPropName", Integer.MAX_VALUE);
   }
 
   /**
