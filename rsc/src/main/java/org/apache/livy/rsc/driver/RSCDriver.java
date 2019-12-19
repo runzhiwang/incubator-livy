@@ -218,6 +218,7 @@ public class RSCDriver extends BaseProtocol {
 
   private void registerClient(final Rpc client) {
     clients.add(client);
+    System.err.println("wangjietest clients size:" + clients.size());
     stopIdleTimeout();
 
     Utils.addListener(client.getChannel().closeFuture(), new FutureListener<Void>() {
