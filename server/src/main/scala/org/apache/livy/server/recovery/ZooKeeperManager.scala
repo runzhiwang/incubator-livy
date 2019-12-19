@@ -23,6 +23,7 @@ import scala.reflect.ClassTag
 import org.apache.curator.framework.api.UnhandledErrorListener
 import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.framework.CuratorFrameworkFactory
+import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
 import org.apache.curator.retry.RetryNTimes
 import org.apache.zookeeper.KeeperException.NoNodeException
 
@@ -38,10 +39,11 @@ object ZooKeeperManager {
   @volatile private var zkManager: ZooKeeperManager = _
 
   def apply(livyConf: LivyConf,
-    mockCuratorClient: Option[CuratorFramework] = None):
+    mockCuratorClient: Option[CuratorFramework] = None,
+    mockDistributedLock: Option[InterProcessSemaphoreMutex] = None):
   ZooKeeperManager = synchronized {
     if (zkManager == null) {
-      zkManager = new ZooKeeperManager(livyConf, mockCuratorClient)
+      zkManager = new ZooKeeperManager(livyConf, mockCuratorClient, mockDistributedLock)
     } else {
       throw new IllegalAccessException(DUPLICATE_CREATE_EXCEPTION)
     }
@@ -59,7 +61,8 @@ object ZooKeeperManager {
 
 class ZooKeeperManager private(
     livyConf: LivyConf,
-    mockCuratorClient: Option[CuratorFramework] = None)
+    mockCuratorClient: Option[CuratorFramework] = None,
+    mockDistributedLock: Option[InterProcessSemaphoreMutex] = None)
   extends JsonMapper with Logging {
 
   import ZooKeeperManager._
@@ -79,6 +82,11 @@ class ZooKeeperManager private(
 
   private val curatorClient = mockCuratorClient.getOrElse {
     CuratorFrameworkFactory.newClient(zkAddress, retryPolicy)
+  }
+
+  private val lockPath = prefixKey("distributedLock")
+  private[recovery] val distributedLock = mockDistributedLock.getOrElse {
+    new InterProcessSemaphoreMutex(curatorClient, lockPath)
   }
 
   Runtime.getRuntime.addShutdownHook(new Thread(new Runnable {
@@ -131,6 +139,14 @@ class ZooKeeperManager private(
     } catch {
       case _: NoNodeException => warn(s"Fail to remove non-existed zookeeper node: ${key}")
     }
+  }
+
+  def lock(): Unit = {
+    distributedLock.acquire()
+  }
+
+  def unlock(): Unit = {
+    distributedLock.release()
   }
 
   private def prefixKey(key: String) = s"/$zkKeyPrefix/$key"

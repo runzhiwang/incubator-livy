@@ -186,6 +186,12 @@ object LivyConf {
    */
   val RECOVERY_MODE = Entry("livy.server.recovery.mode", "off")
 
+  /**
+    * Whether to enable HA with multi-active mode, by default it is false.
+    * If it is enabled, must set livy.server.zookeeper.url.
+    */
+  val HA_MULTI_ACTIVE_ENABLED = Entry("livy.server.ha.multi-active.enabled", false)
+
   // Zookeeper address used for HA and state store. e.g. host1:port1, host2:port2
   val ZOOKEEPER_URL = Entry("livy.server.zookeeper.url", "")
 

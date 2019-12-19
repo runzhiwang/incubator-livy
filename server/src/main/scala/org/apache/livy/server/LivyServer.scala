@@ -146,7 +146,8 @@ class LivyServer extends Logging {
       Future { SparkYarnApp.yarnClient }
     }
 
-    if (livyConf.get(LivyConf.RECOVERY_STATE_STORE) == "zookeeper") {
+    if (livyConf.getBoolean(LivyConf.HA_MULTI_ACTIVE_ENABLED) ||
+      livyConf.get(LivyConf.RECOVERY_STATE_STORE) == "zookeeper") {
       ZooKeeperManager(livyConf)
     }
 
