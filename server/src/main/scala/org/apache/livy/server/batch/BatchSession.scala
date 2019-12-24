@@ -191,10 +191,14 @@ class BatchSession(
         case SparkApp.State.KILLED => {
           _state = SessionState.Killed()
           sessionStore.remove(RECOVERY_SESSION_TYPE, id)
+          System.err.println("wangjietest BatchSession remove when old:" +
+            oldState + " new:" + newState)
         }
         case SparkApp.State.FAILED => {
           _state = SessionState.Dead()
           sessionStore.remove(RECOVERY_SESSION_TYPE, id)
+          System.err.println("wangjietest BatchSession remove when old:" +
+            oldState + " new:" + newState)
         }
         case _ =>
       }

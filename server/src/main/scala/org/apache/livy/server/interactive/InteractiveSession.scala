@@ -582,7 +582,11 @@ class InteractiveSession(
       newState match {
         case _: SessionState.Killed | _: SessionState.Dead =>
           sessionStore.remove(RECOVERY_SESSION_TYPE, id)
+          System.err.println("wangjietest InteractiveSession remove when old:" +
+            serverSideState.toString + " new:" + newState.toString)
         case SessionState.ShuttingDown =>
+          System.err.println("wangjietest InteractiveSession remove when old:" +
+            serverSideState.toString + " new:" + newState.toString)
           sessionStore.remove(RECOVERY_SESSION_TYPE, id)
         case _ =>
       }

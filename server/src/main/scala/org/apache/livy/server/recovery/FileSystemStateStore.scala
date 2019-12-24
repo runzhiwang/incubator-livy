@@ -128,7 +128,11 @@ class FileSystemStateStore(
     try {
       fileContext.delete(absPath(key), false)
     } catch {
-      case _: FileNotFoundException => warn(s"Failed to remove non-existed file: ${key}")
+      case _: FileNotFoundException => {
+        warn(s"Failed to remove non-existed file: ${key}")
+        System.err.println(
+          s"wangjietest Failed to remove non-existed file: ${key}")
+      }
     }
   }
 
