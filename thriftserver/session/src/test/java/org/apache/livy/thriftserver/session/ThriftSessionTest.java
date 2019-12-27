@@ -80,7 +80,9 @@ public class ThriftSessionTest {
 
     // Run a statement in the new session.
     String st1 = nextStatement();
+    System.err.println("wangjietest before waitFor:" + System.currentTimeMillis());
     waitFor(newSqlJob(s1, st1, "CREATE TABLE test (id integer, desc string) USING json"));
+    System.err.println("wangjietest after waitFor:" + System.currentTimeMillis());
 
     // Start a second session. Try to cleanup a statement that belongs to another session.
     String s2 = nextSession();
