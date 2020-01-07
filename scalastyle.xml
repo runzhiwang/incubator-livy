@@ -99,16 +99,6 @@
   <!-- ??? usually shouldn't be checked into the code base. -->
   <check level="error" class="org.scalastyle.scalariform.NotImplementedErrorUsage" enabled="true"></check>
 
-  <check customId="println" level="error" class="org.scalastyle.scalariform.TokenChecker" enabled="true">
-    <parameters>
-      <parameter name="regex">^println$</parameter>
-    </parameters>
-    <customMessage><![CDATA[Are you sure you want to println? If yes, wrap the code block with
-      // scalastyle:off println
-      println(...)
-      // scalastyle:on println]]></customMessage>
-  </check>
-
   <check customId="javaconversions" level="error" class="org.scalastyle.scalariform.TokenChecker" enabled="true">
     <parameters>
       <parameter name="regex">JavaConversions</parameter>

@@ -61,8 +61,9 @@ class Spark2JobApiIT extends BaseIntegrationTestSuite with BeforeAndAfterAll wit
       val tempSessionId = list.sessions(0).id
 
       livyClient.connectSession(tempSessionId).verifySessionIdle()
-      waitFor(tempClient.uploadJar(new File(testLib)))
-
+      System.err.println("wangjietest start:" + System.currentTimeMillis())
+      waitForTest(tempClient.uploadJar(new File(testLib)))
+      System.err.println("wangjietest end:" + System.currentTimeMillis())
       client = tempClient
       sessionId = tempSessionId
     } finally {
@@ -92,6 +93,10 @@ class Spark2JobApiIT extends BaseIntegrationTestSuite with BeforeAndAfterAll wit
 
   private def waitFor[T](future: JFuture[T]): T = {
     future.get(60, TimeUnit.SECONDS)
+  }
+
+  private def waitForTest[T](future: JFuture[T]): T = {
+    future.get(40, TimeUnit.SECONDS)
   }
 
   private def sessionList(): SessionList = {
