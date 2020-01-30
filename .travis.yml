@@ -54,6 +54,7 @@ install:
   - sudo python3 -m pip -q install cloudpickle
   - sudo pip2 -q install "requests >= 2.10.0" pytest flaky flake8 requests-kerberos
   - sudo pip3 -q install "requests >= 2.10.0" pytest flaky requests-kerberos
+  - sudo pip2 -q install cryptography==2.7
 
 script:
   - mvn $MVN_FLAG -Dmaven.javadoc.skip=true -B -V -e verify
