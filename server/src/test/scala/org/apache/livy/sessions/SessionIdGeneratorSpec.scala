@@ -24,24 +24,31 @@ import org.scalatest.Matchers
 import org.scalatest.mock.MockitoSugar.mock
 
 import org.apache.livy.LivyBaseUnitTestSuite
-import org.apache.livy.server.recovery.{SessionStore, ZooKeeperManager}
+import org.apache.livy.server.recovery.{SessionStore, ZooKeeperManager, ZooKeeperStateStore}
 
 class SessionIdGeneratorSpec extends FunSpec with Matchers with LivyBaseUnitTestSuite {
   describe("SessionIdGenerator") {
     it("should generate right session id when use LocalSessionIdGenerator") {
       val sessionStore = mock[SessionStore]
       val idGenerator = new LocalSessionIdGenerator("interactive", sessionStore)
+
       assert(idGenerator.getNextSessionId() == 0)
       assert(idGenerator.getNextSessionId() == 1)
     }
 
     it("should acquire and release lock when use DistributedSessionIdGenerator") {
       val sessionStore = mock[SessionStore]
+      val store = mock[ZooKeeperStateStore]
+      when(sessionStore.getStore).thenReturn(store)
+      when(store.isDistributed()).thenReturn(true)
+
       val zkManager = mock[ZooKeeperManager]
       val lock = mock[InterProcessSemaphoreMutex]
       val idGenerator = new DistributedSessionIdGenerator("interactive",
         sessionStore, zkManager, Some(lock))
+
       idGenerator.getNextSessionId()
+
       verify(lock).acquire
       verify(lock).release
     }

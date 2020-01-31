@@ -30,7 +30,7 @@ import org.scalatest.mock.MockitoSugar.mock
 import org.apache.livy.{LivyBaseUnitTestSuite, LivyConf}
 import org.apache.livy.server.batch.{BatchRecoveryMetadata, BatchSession}
 import org.apache.livy.server.interactive.{InteractiveRecoveryMetadata, InteractiveSession}
-import org.apache.livy.server.recovery.{SessionStore, ZooKeeperManager}
+import org.apache.livy.server.recovery.{SessionStore, ZooKeeperManager, ZooKeeperStateStore}
 import org.apache.livy.sessions.Session.RecoveryMetadata
 
 class SessionManagerSpec extends FunSpec with Matchers with LivyBaseUnitTestSuite {
@@ -315,12 +315,17 @@ class SessionManagerSpec extends FunSpec with Matchers with LivyBaseUnitTestSuit
       val conf = new LivyConf()
       conf.set(LivyConf.HA_MODE, LivyConf.HA_MODE_MULTI_ACTIVE)
 
-      val sessionId = 24
       val sessionStore = mock[SessionStore]
+      val store = mock[ZooKeeperStateStore]
+      when(sessionStore.getStore).thenReturn(store)
+      when(store.isDistributed()).thenReturn(true)
+
+      val sessionId = 24
       val session = mockSession(sessionId)
       val zkManager = Some(mock[ZooKeeperManager])
 
       val sm = new BatchSessionManager(conf, sessionStore, zkManager, Some(Seq(session)))
+
       assert(sm.getSessionIdGenerator.isInstanceOf[DistributedSessionIdGenerator])
     }
   }
