@@ -96,7 +96,7 @@ class SessionManager[S <: Session, R <: RecoveryMetadata : ClassTag](
     }
   }
 
-  def getSessionIdGenerator = sessionIdGenerator
+  def getSessionIdGenerator: SessionIdGenerator = sessionIdGenerator
 
   mockSessions.getOrElse(recover()).foreach(register)
   new GarbageCollector().start()

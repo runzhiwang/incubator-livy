@@ -19,32 +19,15 @@ package org.apache.livy.sessions
 
 import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
 import org.mockito.Mockito._
+import org.scalatest.FunSpec
+import org.scalatest.Matchers
 import org.scalatest.mock.MockitoSugar.mock
-import org.scalatest.{FunSpec, Matchers}
 
-import org.apache.livy.{LivyBaseUnitTestSuite, LivyConf}
+import org.apache.livy.LivyBaseUnitTestSuite
 import org.apache.livy.server.recovery.{SessionStore, ZooKeeperManager}
 
 class SessionIdGeneratorSpec extends FunSpec with Matchers with LivyBaseUnitTestSuite {
   describe("SessionIdGenerator") {
-    it("should crate instance of LocalSessionIdGenerator") {
-      val conf = new LivyConf()
-      conf.set(LivyConf.HA_MODE, LivyConf.HA_MODE_OFF)
-      val sessionStore = mock[SessionStore]
-
-      val sm = new InteractiveSessionManager(conf, sessionStore)
-      assert(sm.getSessionIdGenerator.isInstanceOf[LocalSessionIdGenerator])
-    }
-
-    it("should crate instance of DistributedSessionIdGenerator") {
-      val conf = new LivyConf()
-      conf.set(LivyConf.HA_MODE, LivyConf.HA_MODE_MULTI_ACTIVE)
-      val sessionStore = mock[SessionStore]
-      val zkManager = Some(mock[ZooKeeperManager])
-      val sm = new InteractiveSessionManager(conf, sessionStore, zkManager)
-      assert(sm.getSessionIdGenerator.isInstanceOf[DistributedSessionIdGenerator])
-    }
-
     it("should generate right session id when use LocalSessionIdGenerator") {
       val sessionStore = mock[SessionStore]
       val idGenerator = new LocalSessionIdGenerator("interactive", sessionStore)
@@ -56,7 +39,8 @@ class SessionIdGeneratorSpec extends FunSpec with Matchers with LivyBaseUnitTest
       val sessionStore = mock[SessionStore]
       val zkManager = mock[ZooKeeperManager]
       val lock = mock[InterProcessSemaphoreMutex]
-      val idGenerator = new DistributedSessionIdGenerator("interactive", sessionStore, zkManager, Some(lock))
+      val idGenerator = new DistributedSessionIdGenerator("interactive",
+        sessionStore, zkManager, Some(lock))
       idGenerator.getNextSessionId()
       verify(lock).acquire
       verify(lock).release
