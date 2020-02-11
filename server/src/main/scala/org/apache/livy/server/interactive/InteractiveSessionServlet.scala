@@ -50,17 +50,22 @@ class InteractiveSessionServlet(
   mapper.registerModule(new SessionKindModule())
     .registerModule(new Json4sScalaModule())
 
-  override protected def createSession(req: HttpServletRequest): InteractiveSession = {
+  override protected def createSession(req: HttpServletRequest): Option[InteractiveSession] = {
+    val sessionId = sessionManager.nextId()
+    if (sessionId == SessionIdGenerator.INVALID_SESSION_ID) {
+      return None
+    }
+
     val createRequest = bodyAs[CreateInteractiveRequest](req)
-    InteractiveSession.create(
-      sessionManager.nextId(),
+    Some(InteractiveSession.create(
+      sessionId,
       createRequest.name,
       remoteUser(req),
       proxyUser(req, createRequest.proxyUser),
       livyConf,
       accessManager,
       createRequest,
-      sessionStore)
+      sessionStore))
   }
 
   override protected[interactive] def clientSessionView(

@@ -23,6 +23,7 @@ import org.apache.livy.LivyConf
 import org.apache.livy.server.{AccessManager, SessionServlet}
 import org.apache.livy.server.recovery.SessionStore
 import org.apache.livy.sessions.BatchSessionManager
+import org.apache.livy.sessions.SessionIdGenerator
 import org.apache.livy.utils.AppInfo
 
 case class BatchSessionView(
@@ -43,11 +44,15 @@ class BatchSessionServlet(
   extends SessionServlet(sessionManager, livyConf, accessManager)
 {
 
-  override protected def createSession(req: HttpServletRequest): BatchSession = {
-    val createRequest = bodyAs[CreateBatchRequest](req)
+  override protected def createSession(req: HttpServletRequest): Option[BatchSession] = {
     val sessionId = sessionManager.nextId()
+    if (sessionId == SessionIdGenerator.INVALID_SESSION_ID) {
+      return None
+    }
+
+    val createRequest = bodyAs[CreateBatchRequest](req)
     val sessionName = createRequest.name
-    BatchSession.create(
+    Some(BatchSession.create(
       sessionId,
       sessionName,
       createRequest,
@@ -55,7 +60,7 @@ class BatchSessionServlet(
       accessManager,
       remoteUser(req),
       proxyUser(req, createRequest.proxyUser),
-      sessionStore)
+      sessionStore))
   }
 
   override protected[batch] def clientSessionView(

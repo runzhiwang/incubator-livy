@@ -21,14 +21,19 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
 
+import org.apache.livy.Logging
 import org.apache.livy.server.recovery.{SessionStore, ZooKeeperManager}
+
+object SessionIdGenerator {
+  val INVALID_SESSION_ID = -1
+}
 
 /**
   * Interface of session id generator.
   */
 abstract class SessionIdGenerator(
     sessionType: String,
-    sessionStore: SessionStore) {
+    sessionStore: SessionStore) extends Logging {
 
   /**
     * Get next session id, then increase next session id and save it in store.
@@ -74,10 +79,19 @@ class DistributedSessionIdGenerator(
     zkManager.createLock(SessionStore.sessionIdLockPath(sessionType)))
 
   override def getNextSessionId(): Int = {
+    var result = SessionIdGenerator.INVALID_SESSION_ID
     distributedLock.acquire()
-    val result = getAndIncreaseId()
-    persist(result + 1)
-    distributedLock.release()
+    try {
+      result = getAndIncreaseId()
+      persist(result + 1)
+    } catch {
+      case e: Exception => {
+        result = SessionIdGenerator.INVALID_SESSION_ID
+        error("Fail to generate session id", e)
+      }
+    } finally {
+      distributedLock.release()
+    }
     result
   }
 

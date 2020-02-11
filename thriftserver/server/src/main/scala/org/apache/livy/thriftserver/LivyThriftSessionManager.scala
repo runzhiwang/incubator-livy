@@ -39,6 +39,7 @@ import org.apache.hive.service.server.ThreadFactoryWithGarbageCleanup
 import org.apache.livy.LivyConf
 import org.apache.livy.Logging
 import org.apache.livy.server.interactive.{CreateInteractiveRequest, InteractiveSession}
+import org.apache.livy.sessions.SessionIdGenerator
 import org.apache.livy.sessions.Spark
 import org.apache.livy.thriftserver.SessionStates._
 import org.apache.livy.thriftserver.rpc.RpcClient
@@ -161,7 +162,7 @@ class LivyThriftSessionManager(val server: LivyThriftServer, val livyConf: LivyC
       sessionHandle: SessionHandle,
       sessionId: Option[Int],
       username: String,
-      createLivySession: () => InteractiveSession): InteractiveSession = {
+      createLivySession: () => InteractiveSession): Option[InteractiveSession] = {
     sessionId match {
       case Some(id) =>
         server.livySessionManager.get(id) match {
@@ -175,7 +176,7 @@ class LivyThriftSessionManager(val server: LivyThriftServer, val livyConf: LivyC
           case Some(session) =>
             if (session.state.isActive) {
               info(s"Reusing Session $id for $sessionHandle.")
-              session
+              Some(session)
             } else {
               warn(s"InteractiveSession $id is not active anymore.")
               throw new IllegalArgumentException(s"Session $id is not active anymore.")
@@ -225,9 +226,14 @@ class LivyThriftSessionManager(val server: LivyThriftServer, val livyConf: LivyC
     val (initStatements, createInteractiveRequest, sessionId) =
       LivyThriftSessionManager.processSessionConf(sessionConf, supportUseDatabase)
     val createLivySession = () => {
+      val sessionId = server.livySessionManager.nextId()
+      if (sessionId == SessionIdGenerator.INVALID_SESSION_ID) {
+        return None
+      }
+
       createInteractiveRequest.kind = Spark
       val newSession = InteractiveSession.create(
-        server.livySessionManager.nextId(),
+        sessionId,
         createInteractiveRequest.name,
         username,
         None,
@@ -240,12 +246,17 @@ class LivyThriftSessionManager(val server: LivyThriftServer, val livyConf: LivyC
     }
     val futureLivySession = Future {
       val livyServiceUGI = UserGroupInformation.getCurrentUser
-      var livySession: InteractiveSession = null
+      var livySession: Option[InteractiveSession] = None
       try {
         livyServiceUGI.doAs(new PrivilegedExceptionAction[InteractiveSession] {
           override def run(): InteractiveSession = {
-            livySession =
+            val session =
               getOrCreateLivySession(sessionHandle, sessionId, username, createLivySession)
+            if (session.isEmpty) {
+              throw new ThriftSessionCreationException(None, "Fail to create livy session!")
+            }
+
+            livySession = session.get
             synchronized {
               managedLivySessionActiveUsers.get(livySession.id).foreach { numUsers =>
                 managedLivySessionActiveUsers(livySession.id) = numUsers + 1
